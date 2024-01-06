@@ -128,9 +128,11 @@ func buildPgConnectionString(options PgConnectionOptions) (string, error) {
 		sslOptions := struct {
 			SSLCert string `url:"sslcert"`
 			SSLKey  string `url:"sslkey"`
+			SSLMode string `url:"sslmode"`
 		}{
 			options.sslcert,
 			options.sslkey,
+			options.sslmode,
 		}
 
 		v, _ := query.Values((sslOptions))
@@ -149,10 +151,12 @@ func buildPgConnectionString(options PgConnectionOptions) (string, error) {
 			SSLCert     string `url:"sslcert"`
 			SSLKey      string `url:"sslkey"`
 			SSLRootCert string `url:"sslrootcert"`
+			SSLMode     string `url:"sslmode"`
 		}{
 			options.sslcert,
 			options.sslkey,
 			options.sslrootcert,
+			options.sslmode,
 		}
 
 		v, _ := query.Values(sslOptions)
@@ -164,7 +168,6 @@ func buildPgConnectionString(options PgConnectionOptions) (string, error) {
 }
 
 func createDatabaseDriver(connectionString string) database.Driver {
-	// TODO: SSH access
 	db, err := sql.Open("postgres", connectionString)
 	if err != nil {
 		log.Fatal(err)
