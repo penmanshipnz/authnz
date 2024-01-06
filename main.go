@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -8,11 +10,20 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/gorilla/csrf"
+	_ "github.com/lib/pq"
 )
 
 func main() {
-	env := os.Getenv("GO_ENV")
+	env := getEnv("GO_ENV", "development")
+
+	driver := getDatabaseDriver()
+	migration := getMigration(driver)
+	migration.Up()
 
 	r := chi.NewRouter()
 
@@ -45,4 +56,46 @@ func main() {
 	CSRF := csrf.Protect([]byte("32-byte-long-auth-key"))
 
 	http.ListenAndServe(":1001", CSRF(r))
+}
+
+func getDatabaseDriver() database.Driver {
+	// TODO: SSH access
+	db, err := sql.Open("postgres", getEnv("CONNECTION_STRING", "postgres://postgres:postgres@localhost:5432/?sslmode=disable"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	driver, err := postgres.WithInstance(db, &postgres.Config{
+		DatabaseName:          getEnv("POSTGRES_DB", "authnz"),
+		MigrationsTable:       getEnv("POSTGRES_MIGRATIONS_TABLE", "migrations"),
+		MultiStatementEnabled: true,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return driver
+}
+
+func getMigration(driver database.Driver) *migrate.Migrate {
+	migration, err := migrate.NewWithDatabaseInstance(
+		"file://migrations",
+		"postgres",
+		driver)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return migration
+}
+
+func getEnv(key, defaultValue string) string {
+	value, exists := os.LookupEnv(key)
+
+	if !exists {
+		value = defaultValue
+	}
+
+	return value
 }
