@@ -14,7 +14,11 @@ type User struct {
 func CreateAccessToken(user User, signingKey string, noExpiry bool) (string, error) {
 	registeredClaims := claims{"",
 		jwt.RegisteredClaims{
-			Issuer: issuer,
+			IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+			NotBefore: jwt.NewNumericDate(time.Now().UTC()),
+			Issuer:    issuer,
+			Subject:   user.UUID,
+			ID:        user.UUID,
 		},
 	}
 
@@ -29,8 +33,8 @@ func CreateAccessToken(user User, signingKey string, noExpiry bool) (string, err
 
 func CreateRefreshToken(user User, signingKey string, noExpiry bool) (string, error) {
 	registeredClaims := jwt.RegisteredClaims{
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		NotBefore: jwt.NewNumericDate(time.Now()),
+		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+		NotBefore: jwt.NewNumericDate(time.Now().UTC()),
 		Issuer:    issuer,
 		Subject:   user.UUID,
 		ID:        user.UUID,
@@ -64,9 +68,9 @@ type claims struct {
 const issuer = "penmanship"
 
 func oneHourFromNow() time.Time {
-	return time.Now().Local().Add(2 * time.Hour).Truncate(time.Second)
+	return time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
 }
 
 func oneMonthFromNow() time.Time {
-	return time.Now().Local().AddDate(0, 1, 0).Truncate(time.Second)
+	return time.Now().UTC().AddDate(0, 1, 0).Truncate(time.Second)
 }

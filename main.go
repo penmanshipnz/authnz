@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	authnzab "penmanship/authnz/authboss"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -20,6 +21,7 @@ import (
 	"github.com/google/go-querystring/query"
 	"github.com/gorilla/csrf"
 	_ "github.com/lib/pq"
+	"github.com/volatiletech/authboss/v3"
 )
 
 func main() {
@@ -40,14 +42,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	driver := createDatabaseDriver(connectionString)
+	db := createDatabase(connectionString)
+	driver := createDatabaseDriver(db)
 	migration := createMigration(driver)
 
 	err = migration.Up()
-	if err != nil && err.Error() != "no change" {
+	if err != nil && err != migrate.ErrNoChange {
 		log.Fatal(err)
-	} else {
-		log.Println("migration success")
 	}
 
 	r := chi.NewRouter()
@@ -62,6 +63,8 @@ func main() {
 		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-CSRF-Token"},
 		AllowCredentials: false,
 	}))
+
+	setupAuthBoss(db)
 
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -81,6 +84,16 @@ func main() {
 	CSRF := csrf.Protect([]byte("32-byte-long-auth-key"))
 
 	http.ListenAndServe(":1001", CSRF(r))
+}
+
+func setupAuthBoss(db *sql.DB) error {
+	// TODO
+	authboss := authboss.New()
+	database := authnzab.CreateStorer(db)
+
+	authboss.Config.Storage.Server = database
+
+	return nil
 }
 
 type PgConnectionOptions struct {
@@ -180,13 +193,16 @@ func buildPgConnectionString(options PgConnectionOptions) (string, error) {
 	return baseConnectionString, nil
 }
 
-func createDatabaseDriver(connectionString string) database.Driver {
+func createDatabase(connectionString string) *sql.DB {
 	db, err := sql.Open("postgres", connectionString)
-
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	return db
+}
+
+func createDatabaseDriver(db *sql.DB) database.Driver {
 	driver, err := postgres.WithInstance(db, &postgres.Config{
 		MigrationsTable:       getEnvOrDefault("POSTGRES_MIGRATIONS_TABLE", "migrations"),
 		MultiStatementEnabled: true,
