@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -25,14 +26,15 @@ func main() {
 	env := getEnvOrDefault("GO_ENV", "development")
 
 	connectionString, err := buildPgConnectionString(PgConnectionOptions{
-		user:        getEnvOrDefault("POSTGRES_USER", ""),
-		password:    getEnvOrDefault("POSTGRES_PASSWORD", ""),
-		host:        getEnvOrDefault("POSTGRES_HOSTNAME", ""),
-		port:        getEnvOrDefault("POSTGRES_PORT", ""),
-		sslcert:     getEnvOrDefault("POSTGRES_SSLCERT", ""),
-		sslkey:      getEnvOrDefault("POSTGRES_SSLKEY", ""),
-		sslrootcert: getEnvOrDefault("POSTGRES_SSLROOTCERT", ""),
-		sslmode:     getEnvOrDefault("POSTGRES_SSLMODE", ""),
+		User:        getEnvOrDefault("POSTGRES_USER", ""),
+		Password:    getEnvOrDefault("POSTGRES_PASSWORD", ""),
+		Host:        getEnvOrDefault("POSTGRES_HOSTNAME", ""),
+		Port:        getEnvOrDefault("POSTGRES_PORT", ""),
+		SSLCert:     getEnvOrDefault("POSTGRES_SSLCERT", ""),
+		SSLKey:      getEnvOrDefault("POSTGRES_SSLKEY", ""),
+		SSLRootCert: getEnvOrDefault("POSTGRES_SSLROOTCERT", ""),
+		SSLMode:     getEnvOrDefault("POSTGRES_SSLMODE", ""),
+		Database:    getEnvOrDefault("POSTGRES_DB", "authnz"),
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -40,7 +42,13 @@ func main() {
 
 	driver := createDatabaseDriver(connectionString)
 	migration := createMigration(driver)
-	migration.Up()
+
+	err = migration.Up()
+	if err != nil && err.Error() != "no change" {
+		log.Fatal(err)
+	} else {
+		log.Println("migration success")
+	}
 
 	r := chi.NewRouter()
 
@@ -76,52 +84,57 @@ func main() {
 }
 
 type PgConnectionOptions struct {
-	user        string
-	password    string
-	host        string
-	port        string
-	sslcert     string
-	sslkey      string
-	sslrootcert string
-	sslmode     string
+	User        string
+	Password    string
+	Host        string
+	Port        string
+	SSLCert     string
+	SSLKey      string
+	SSLRootCert string
+	SSLMode     string
+	Database    string
 }
 
 func buildPgConnectionString(options PgConnectionOptions) (string, error) {
 	buildErrorMessage := func(field string) string {
 		return fmt.Sprintf("empty pg connection option %s", field)
 	}
+	buildConnectionString := func(baseConnectionString string, queryParams url.Values) string {
+		return fmt.Sprintf("%s?%s", baseConnectionString, queryParams.Encode())
+	}
 
-	if options.user == "" {
+	if options.User == "" {
 		return "", errors.New(buildErrorMessage("user"))
-	} else if options.password == "" {
+	} else if options.Password == "" {
 		return "", errors.New(buildErrorMessage("password"))
-	} else if options.host == "" {
+	} else if options.Host == "" {
 		return "", errors.New(buildErrorMessage("host"))
-	} else if options.port == "" {
+	} else if options.Port == "" {
 		return "", errors.New(buildErrorMessage("port"))
 	}
 
 	baseConnectionString := fmt.Sprintf(
-		"postgres://%s:%s@%s:%s",
-		options.user,
-		options.password,
-		options.host,
-		options.port)
+		"postgres://%s:%s@%s:%s/%s",
+		options.User,
+		options.Password,
+		options.Host,
+		options.Port,
+		options.Database)
 
-	if options.sslmode == "disable" {
+	if options.SSLMode == "disable" {
 		sslOptions := struct {
 			SSLMode string `url:"sslmode"`
 		}{
-			options.sslmode,
+			options.SSLMode,
 		}
 
 		v, _ := query.Values(sslOptions)
 
-		return fmt.Sprintf("%s/?%s", baseConnectionString, v.Encode()), nil
-	} else if options.sslmode == "require" {
-		if options.sslcert == "" {
+		return buildConnectionString(baseConnectionString, v), nil
+	} else if options.SSLMode == "require" {
+		if options.SSLCert == "" {
 			return "", errors.New(buildErrorMessage("sslcert"))
-		} else if options.sslkey == "" {
+		} else if options.SSLKey == "" {
 			return "", errors.New(buildErrorMessage("sslkey"))
 		}
 
@@ -130,20 +143,20 @@ func buildPgConnectionString(options PgConnectionOptions) (string, error) {
 			SSLKey  string `url:"sslkey"`
 			SSLMode string `url:"sslmode"`
 		}{
-			options.sslcert,
-			options.sslkey,
-			options.sslmode,
+			options.SSLCert,
+			options.SSLKey,
+			options.SSLMode,
 		}
 
 		v, _ := query.Values((sslOptions))
 
-		return fmt.Sprintf("%s/?%s", baseConnectionString, v.Encode()), nil
-	} else if options.sslmode == "verify-ca" || options.sslmode == "verify-full" {
-		if options.sslcert == "" {
+		return buildConnectionString(baseConnectionString, v), nil
+	} else if options.SSLMode == "verify-ca" || options.SSLMode == "verify-full" {
+		if options.SSLCert == "" {
 			return "", errors.New(buildErrorMessage("sslcert"))
-		} else if options.sslkey == "" {
+		} else if options.SSLKey == "" {
 			return "", errors.New(buildErrorMessage("sslkey"))
-		} else if options.sslrootcert == "" {
+		} else if options.SSLRootCert == "" {
 			return "", errors.New(buildErrorMessage("sslrootcert"))
 		}
 
@@ -153,15 +166,15 @@ func buildPgConnectionString(options PgConnectionOptions) (string, error) {
 			SSLRootCert string `url:"sslrootcert"`
 			SSLMode     string `url:"sslmode"`
 		}{
-			options.sslcert,
-			options.sslkey,
-			options.sslrootcert,
-			options.sslmode,
+			options.SSLCert,
+			options.SSLKey,
+			options.SSLRootCert,
+			options.SSLMode,
 		}
 
 		v, _ := query.Values(sslOptions)
 
-		return fmt.Sprintf("%s/?%s", baseConnectionString, v.Encode()), nil
+		return buildConnectionString(baseConnectionString, v), nil
 	}
 
 	return baseConnectionString, nil
@@ -169,12 +182,12 @@ func buildPgConnectionString(options PgConnectionOptions) (string, error) {
 
 func createDatabaseDriver(connectionString string) database.Driver {
 	db, err := sql.Open("postgres", connectionString)
+
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	driver, err := postgres.WithInstance(db, &postgres.Config{
-		DatabaseName:          getEnvOrDefault("POSTGRES_DB", "authnz"),
 		MigrationsTable:       getEnvOrDefault("POSTGRES_MIGRATIONS_TABLE", "migrations"),
 		MultiStatementEnabled: true,
 	})
