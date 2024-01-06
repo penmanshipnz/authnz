@@ -1,0 +1,62 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/go-postgres
+{
+	"name": "authnz",
+	"dockerComposeFile": [
+		"docker-compose.yml"
+	],
+	"service": "authnz",
+	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+	"features": {
+		"ghcr.io/devcontainers/features/go": ""
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"golang.go",
+				"davidanson.vscode-markdownlint",
+				"ms-azuretools.vscode-docker",
+				"Gruntfuggly.todo-tree",
+				"IBM.output-colorizer"
+			]
+		},
+		"settings": {
+			"go.buildTags": "",
+			"go.toolsEnvVars": {
+				"CGO_ENABLED": "0"
+			},
+			"go.useLanguageServer": true,
+			"go.testEnvVars": {
+				"CGO_ENABLED": "1"
+			},
+			"go.testFlags": [
+				"-v",
+				"-race"
+			],
+			"go.testTimeout": "10s",
+			"go.coverOnSingleTest": true,
+			"go.coverOnSingleTestFile": true,
+			"go.coverOnTestPackage": true,
+			"go.lintTool": "golangci-lint",
+			"go.lintOnSave": "package",
+			"[go]": {
+				"editor.codeActionsOnSave": {
+					"source.organizeImports": true
+				}
+			},
+			"gopls": {
+				"usePlaceholders": false,
+				"staticcheck": true,
+				"vulncheck": "Imports"
+			},
+			"remote.extensionKind": {
+				"ms-azuretools.vscode-docker": "workspace"
+			}
+		}
+	},
+	"forwardPorts": [
+		1001
+	],
+	// Use 'postCreateCommand' to run commands after the container is created.
+	"postCreateCommand": "go version"
+}
