@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS tokens(
+	authenticatee UUID NOT NULL UNIQUE,
+	tokens TEXT ARRAY,
+	FOREIGN KEY(authenticatee)
+		REFERENCES USERS(uuid)
+		ON DELETE CASCADE
+);
