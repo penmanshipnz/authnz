@@ -1,0 +1,3 @@
+ALTER TABLE users
+	DROP COLUMN IF EXISTS active,
+	DROP COLUMN IF EXISTS deleted;
