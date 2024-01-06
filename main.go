@@ -2,6 +2,8 @@ package main
 
 import (
 	"database/sql"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -14,15 +16,30 @@ import (
 	"github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/google/go-querystring/query"
 	"github.com/gorilla/csrf"
 	_ "github.com/lib/pq"
 )
 
 func main() {
-	env := getEnv("GO_ENV", "development")
+	env := getEnvOrDefault("GO_ENV", "development")
 
-	driver := getDatabaseDriver()
-	migration := getMigration(driver)
+	connectionString, err := buildPgConnectionString(PgConnectionOptions{
+		user:        getEnvOrDefault("POSTGRES_USER", ""),
+		password:    getEnvOrDefault("POSTGRES_PASSWORD", ""),
+		host:        getEnvOrDefault("POSTGRES_HOSTNAME", ""),
+		port:        getEnvOrDefault("POSTGRES_PORT", ""),
+		sslcert:     getEnvOrDefault("POSTGRES_SSLCERT", ""),
+		sslkey:      getEnvOrDefault("POSTGRES_SSLKEY", ""),
+		sslrootcert: getEnvOrDefault("POSTGRES_SSLROOTCERT", ""),
+		sslmode:     getEnvOrDefault("POSTGRES_SSLMODE", ""),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	driver := createDatabaseDriver(connectionString)
+	migration := createMigration(driver)
 	migration.Up()
 
 	r := chi.NewRouter()
@@ -58,16 +75,104 @@ func main() {
 	http.ListenAndServe(":1001", CSRF(r))
 }
 
-func getDatabaseDriver() database.Driver {
+type PgConnectionOptions struct {
+	user        string
+	password    string
+	host        string
+	port        string
+	sslcert     string
+	sslkey      string
+	sslrootcert string
+	sslmode     string
+}
+
+func buildPgConnectionString(options PgConnectionOptions) (string, error) {
+	buildErrorMessage := func(field string) string {
+		return fmt.Sprintf("empty pg connection option %s", field)
+	}
+
+	if options.user == "" {
+		return "", errors.New(buildErrorMessage("user"))
+	} else if options.password == "" {
+		return "", errors.New(buildErrorMessage("password"))
+	} else if options.host == "" {
+		return "", errors.New(buildErrorMessage("host"))
+	} else if options.port == "" {
+		return "", errors.New(buildErrorMessage("port"))
+	}
+
+	baseConnectionString := fmt.Sprintf(
+		"postgres://%s:%s@%s:%s",
+		options.user,
+		options.password,
+		options.host,
+		options.port)
+
+	if options.sslmode == "disable" {
+		sslOptions := struct {
+			SSLMode string `url:"sslmode"`
+		}{
+			options.sslmode,
+		}
+
+		v, _ := query.Values(sslOptions)
+
+		return fmt.Sprintf("%s/?%s", baseConnectionString, v.Encode()), nil
+	} else if options.sslmode == "require" {
+		if options.sslcert == "" {
+			return "", errors.New(buildErrorMessage("sslcert"))
+		} else if options.sslkey == "" {
+			return "", errors.New(buildErrorMessage("sslkey"))
+		}
+
+		sslOptions := struct {
+			SSLCert string `url:"sslcert"`
+			SSLKey  string `url:"sslkey"`
+		}{
+			options.sslcert,
+			options.sslkey,
+		}
+
+		v, _ := query.Values((sslOptions))
+
+		return fmt.Sprintf("%s/?%s", baseConnectionString, v.Encode()), nil
+	} else if options.sslmode == "verify-ca" || options.sslmode == "verify-full" {
+		if options.sslcert == "" {
+			return "", errors.New(buildErrorMessage("sslcert"))
+		} else if options.sslkey == "" {
+			return "", errors.New(buildErrorMessage("sslkey"))
+		} else if options.sslrootcert == "" {
+			return "", errors.New(buildErrorMessage("sslrootcert"))
+		}
+
+		sslOptions := struct {
+			SSLCert     string `url:"sslcert"`
+			SSLKey      string `url:"sslkey"`
+			SSLRootCert string `url:"sslrootcert"`
+		}{
+			options.sslcert,
+			options.sslkey,
+			options.sslrootcert,
+		}
+
+		v, _ := query.Values(sslOptions)
+
+		return fmt.Sprintf("%s/?%s", baseConnectionString, v.Encode()), nil
+	}
+
+	return baseConnectionString, nil
+}
+
+func createDatabaseDriver(connectionString string) database.Driver {
 	// TODO: SSH access
-	db, err := sql.Open("postgres", getEnv("CONNECTION_STRING", "postgres://postgres:postgres@localhost:5432/?sslmode=disable"))
+	db, err := sql.Open("postgres", connectionString)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	driver, err := postgres.WithInstance(db, &postgres.Config{
-		DatabaseName:          getEnv("POSTGRES_DB", "authnz"),
-		MigrationsTable:       getEnv("POSTGRES_MIGRATIONS_TABLE", "migrations"),
+		DatabaseName:          getEnvOrDefault("POSTGRES_DB", "authnz"),
+		MigrationsTable:       getEnvOrDefault("POSTGRES_MIGRATIONS_TABLE", "migrations"),
 		MultiStatementEnabled: true,
 	})
 	if err != nil {
@@ -77,7 +182,7 @@ func getDatabaseDriver() database.Driver {
 	return driver
 }
 
-func getMigration(driver database.Driver) *migrate.Migrate {
+func createMigration(driver database.Driver) *migrate.Migrate {
 	migration, err := migrate.NewWithDatabaseInstance(
 		"file://migrations",
 		"postgres",
@@ -90,7 +195,7 @@ func getMigration(driver database.Driver) *migrate.Migrate {
 	return migration
 }
 
-func getEnv(key, defaultValue string) string {
+func getEnvOrDefault(key, defaultValue string) string {
 	value, exists := os.LookupEnv(key)
 
 	if !exists {
