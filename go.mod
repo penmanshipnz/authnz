@@ -3,7 +3,7 @@ module penmanship/authnz
 go 1.21.5
 
 require (
-	github.com/DATA-DOG/go-sqlmock v1.5.1
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/go-chi/chi/v5 v5.0.11
 	github.com/go-chi/cors v1.2.1
 	github.com/golang-migrate/migrate/v4 v4.17.0
