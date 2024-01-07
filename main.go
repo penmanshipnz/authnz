@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	authnzab "penmanship/authnz/authboss"
+	"regexp"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -20,8 +22,14 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/google/go-querystring/query"
 	"github.com/gorilla/csrf"
+	"github.com/gorilla/securecookie"
+	"github.com/gorilla/sessions"
 	_ "github.com/lib/pq"
+	abclientstate "github.com/volatiletech/authboss-clientstate"
 	"github.com/volatiletech/authboss/v3"
+	_ "github.com/volatiletech/authboss/v3/auth"
+	"github.com/volatiletech/authboss/v3/defaults"
+	_ "github.com/volatiletech/authboss/v3/register"
 )
 
 func main() {
@@ -64,8 +72,6 @@ func main() {
 		AllowCredentials: false,
 	}))
 
-	setupAuthBoss(db)
-
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
@@ -73,27 +79,105 @@ func main() {
 
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("root."))
+	ab, err := setupAuthBoss(db, r)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Authenticated routes
+	r.Group(func(r chi.Router) {
+		r.Use(authboss.Middleware2(ab, authboss.RequireNone, authboss.RespondUnauthorized))
+		// TODO: Authz
 	})
 
-	// TODO: CSRF stuff needs updating
-	// - Auth key
-	// - https://github.com/gorilla/csrf#javascript-applications
-	csrf.Secure(env == "production")
-	CSRF := csrf.Protect([]byte("32-byte-long-auth-key"))
+	CSRF := csrf.Protect(securecookie.GenerateRandomKey(32),
+		csrf.Secure(env == "production"), csrf.CookieName("_csrf"))
 
 	http.ListenAndServe(":1001", CSRF(r))
 }
 
-func setupAuthBoss(db *sql.DB) error {
+func setupAuthBoss(db *sql.DB, r *chi.Mux) (*authboss.Authboss, error) {
 	// TODO
-	authboss := authboss.New()
+	// - If login or register fails, its a success response with details of an error
+	//   Would rather go with unauthorized response
+	// - With register, if database create fails then there is still a success response
+	//   but the error is logged
+	// - Need to load current user information for authz
+	// - Improve validation
+	generateRandomKey := func() string {
+		return base64.StdEncoding.EncodeToString(securecookie.GenerateRandomKey(64))
+	}
+
+	cookieStoreKey, _ := base64.StdEncoding.DecodeString(getEnvOrDefault("COOKIE_STORE_KEY", generateRandomKey()))
+	sessionStoreKey, _ := base64.StdEncoding.DecodeString(getEnvOrDefault("SESSION_STORE_KEY", generateRandomKey()))
+
+	ab := authboss.New()
 	database := authnzab.CreateStorer(db)
 
-	authboss.Config.Storage.Server = database
+	ab.Config.Paths.Mount = "/"
+	ab.Config.Paths.AuthLoginOK = "/"                     // TODO: Redirect to authz
+	ab.Config.Paths.RegisterOK = "/"                      // TODO: Redirect to authz
+	ab.Config.Paths.RootURL = "http://localhost:52112/"   // TODO: Env specific
+	ab.Config.Core.ViewRenderer = defaults.JSONRenderer{} // TODO: Custom renderer
 
-	return nil
+	cookieStore := abclientstate.NewCookieStorer(cookieStoreKey, nil)
+	cookieStore.HTTPOnly = true
+	cookieStore.Secure = getEnvOrDefault("GO_ENV", "development") == "development"
+
+	sessionStore := abclientstate.NewSessionStorer("penmanship", sessionStoreKey, nil)
+	cstore := sessionStore.Store.(*sessions.CookieStore)
+	cstore.Options.HttpOnly = true
+	cstore.Options.Secure = getEnvOrDefault("GO_ENV", "development") == "development"
+	cstore.MaxAge(int((30 * 24 * time.Hour) / time.Second))
+
+	ab.Config.Storage.Server = database
+	ab.Config.Storage.SessionState = sessionStore
+	ab.Config.Storage.CookieState = cookieStore
+
+	defaults.SetCore(&ab.Config, true, false)
+
+	emailRule := defaults.Rules{
+		FieldName:  "email",
+		Required:   true,
+		MatchError: "Must be a valid e-mail address",
+		MustMatch:  regexp.MustCompile(`.*@.*\.[a-z]+`),
+	}
+	passwordRule := defaults.Rules{
+		FieldName: "password",
+		Required:  true,
+		MinLength: 4,
+	}
+
+	ab.Config.Core.BodyReader = defaults.HTTPBodyReader{
+		ReadJSON: true,
+		Rulesets: map[string][]defaults.Rules{
+			"login":    {emailRule, passwordRule},
+			"register": {emailRule, passwordRule},
+		},
+	}
+
+	// Initialize authboss (instantiate modules etc.)
+	err := ab.Init()
+
+	// Setup AuthBoss routes
+	r.Use(ab.LoadClientStateMiddleware)
+
+	r.Group(func(r chi.Router) {
+		r.Use(authboss.ModuleListMiddleware(ab))
+		r.Mount("/", ab.Config.Core.Router)
+	})
+
+	optionsHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-CSRF-TOKEN", csrf.Token(r))
+		w.WriteHeader(http.StatusOK)
+	}
+	r.MethodFunc("OPTIONS", "/*", optionsHandler)
+	routes := []string{"login", "logout", "register"}
+	for _, route := range routes {
+		r.MethodFunc("OPTIONS", "/"+route, optionsHandler)
+	}
+
+	return ab, err
 }
 
 type PgConnectionOptions struct {

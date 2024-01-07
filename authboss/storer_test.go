@@ -47,7 +47,7 @@ func TestCreateUserSuccess(t *testing.T) {
 		WithArgs(user.UUID, user.Email, user.Password).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	if err := storer.Create(context.TODO(), user); err != nil {
+	if err := storer.Create(ctx, user); err != nil {
 		t.FailNow()
 	}
 }
@@ -66,7 +66,7 @@ func TestCreateUserErr(t *testing.T) {
 		WithArgs(user.UUID, user.Email, user.Password).
 		WillReturnError(errors.New(""))
 
-	if err := storer.Create(context.TODO(), user); err == nil {
+	if err := storer.Create(ctx, user); err == nil {
 		t.FailNow()
 	}
 }
@@ -111,7 +111,7 @@ func TestLoadUserErr(t *testing.T) {
 		WithArgs(user.Email).
 		WillReturnError(sql.ErrNoRows)
 
-	if _, err := storer.Load(context.TODO(), user.GetPID()); err == nil || err != authboss.ErrUserNotFound {
+	if _, err := storer.Load(ctx, user.GetPID()); err == nil || err != authboss.ErrUserNotFound {
 		t.FailNow()
 	}
 }
@@ -132,7 +132,7 @@ func TestSaveUserSuccess(t *testing.T) {
 		WithArgs(user.Password, user.UUID).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	if err := storer.Save(context.TODO(), user); err != nil {
+	if err := storer.Save(ctx, user); err != nil {
 		t.FailNow()
 	}
 }
@@ -153,7 +153,7 @@ func TestSaveUserErr(t *testing.T) {
 		WithArgs(user.Password, user.UUID).
 		WillReturnError(errors.New(""))
 
-	if err := storer.Save(context.TODO(), user); err == nil {
+	if err := storer.Save(ctx, user); err == nil {
 		t.FailNow()
 	}
 }

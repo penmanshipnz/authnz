@@ -10,7 +10,9 @@ require (
 	github.com/google/go-querystring v1.1.0
 	github.com/google/uuid v1.5.0
 	github.com/gorilla/csrf v1.7.2
+	github.com/gorilla/sessions v1.2.2
 	github.com/lib/pq v1.10.9
+	github.com/volatiletech/authboss-clientstate v0.0.0-20230313034706-0b930a6c0713
 	github.com/volatiletech/authboss/v3 v3.5.0
 )
 
@@ -26,7 +28,7 @@ require (
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.2.0
-	github.com/gorilla/securecookie v1.1.2 // indirect
+	github.com/gorilla/securecookie v1.1.2
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect

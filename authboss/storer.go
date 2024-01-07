@@ -38,13 +38,13 @@ CreateServerStorer interface
 Create the user in storage, it should not overwrite a user
 and should return ErrUserFound if it currently exists.
 */
-func (storer Storer) Create(_ context.Context, abu authboss.User) error {
+func (storer Storer) Create(ctx context.Context, abu authboss.User) error {
 	user := toUser(abu)
 
 	const query = `INSERT INTO users(uuid, email, password)
 		VALUES($1, $2, $3)
 		RETURNING uuid, email, password`
-	_, err := storer.db.Exec(query, user.UUID, user.Email, user.Password)
+	_, err := storer.db.ExecContext(ctx, query, user.UUID, user.Email, user.Password)
 
 	return err
 }
@@ -60,11 +60,11 @@ provider:oauth2uid), and therefore key be special cased in a Load()
 implementation to handle that form, use ParseOAuth2PID to see
 if key is an OAuth2PID or not.
 */
-func (storer Storer) Load(_ context.Context, email string) (authboss.User, error) {
+func (storer Storer) Load(ctx context.Context, email string) (authboss.User, error) {
 	var user User
 
 	const query = `SELECT uuid, email, password FROM users WHERE email=$1`
-	row := storer.db.QueryRow(query, email)
+	row := storer.db.QueryRowContext(ctx, query, email)
 
 	if err := row.Scan(&user.UUID, &user.Email, &user.Password); err != nil {
 		if err == sql.ErrNoRows {
@@ -84,7 +84,7 @@ Save persists the user in the database, this should never
 create a user and instead return ErrUserNotFound if the user
 does not exist.
 */
-func (storer Storer) Save(_ context.Context, abu authboss.User) error {
+func (storer Storer) Save(ctx context.Context, abu authboss.User) error {
 	user := toUser(abu)
 
 	const query = `UPDATE users
@@ -92,7 +92,7 @@ func (storer Storer) Save(_ context.Context, abu authboss.User) error {
 			password=$1
 		WHERE uuid=$2
 		RETURNING uuid, email, password`
-	_, err := storer.db.Exec(query, user.Password, user.UUID)
+	_, err := storer.db.ExecContext(ctx, query, user.Password, user.UUID)
 
 	return err
 }
