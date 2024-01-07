@@ -172,7 +172,7 @@ func TestAddRememberTokenSuccess(t *testing.T) {
 			ARRAY[$2])
 		ON CONFLICT (authenticatee)
 		DO
-			UPDATE SET tokens = array_append(remember_tokens.tokens, $2);`
+			UPDATE SET tokens=array_append(remember_tokens.tokens, $2);`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
 		WithArgs(token, email).
@@ -197,7 +197,7 @@ func TestAddRememberTokenErr(t *testing.T) {
 			ARRAY[$2])
 		ON CONFLICT (authenticatee)
 		DO
-			UPDATE SET tokens = array_append(remember_tokens.tokens, $2);`
+			UPDATE SET tokens=array_append(remember_tokens.tokens, $2);`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
 		WithArgs(token, email).
@@ -221,7 +221,7 @@ func TestDelRememberTokensSuccess(t *testing.T) {
 			ARRAY[])
 		ON CONFLICT (authenticatee)
 		DO
-			UPDATE SET tokens = NULL;`
+			UPDATE SET tokens=NULL;`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
 		WithArgs(email).
@@ -245,7 +245,7 @@ func TestDelRememberTokensErr(t *testing.T) {
 			ARRAY[])
 		ON CONFLICT (authenticatee)
 		DO
-			UPDATE SET tokens = NULL;`
+			UPDATE SET tokens=NULL;`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
 		WithArgs(email).
@@ -267,9 +267,11 @@ func TestUseRememberTokenSuccess(t *testing.T) {
 	const query = `
 		UPDATE remember_tokens
 		SET
-			tokens = ARRAY_REMOVE(tokens, $1)
+			tokens=ARRAY_REMOVE(tokens, $1)
 		WHERE
-			authenticatee=(SELECT uuid FROM users WHERE email=$2);`
+			authenticatee=(SELECT uuid FROM users WHERE email=$2)
+		AND
+			$1=ANY(tokens);`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
 		WithArgs(token, email).
@@ -291,9 +293,11 @@ func TestUseRememberTokenErr(t *testing.T) {
 	const query = `
 		UPDATE remember_tokens
 		SET
-			tokens = ARRAY_REMOVE(tokens, $1)
+			tokens=ARRAY_REMOVE(tokens, $1)
 		WHERE
-			authenticatee=(SELECT uuid FROM users WHERE email=$2);`
+			authenticatee=(SELECT uuid FROM users WHERE email=$2)
+		AND
+			$1=ANY(tokens);`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
 		WithArgs(token, email).
@@ -315,9 +319,11 @@ func TestUseRememberErrTokenNotFound(t *testing.T) {
 	const query = `
 		UPDATE remember_tokens
 		SET
-			tokens = ARRAY_REMOVE(tokens, $1)
+			tokens=ARRAY_REMOVE(tokens, $1)
 		WHERE
-			authenticatee=(SELECT uuid FROM users WHERE email=$2);`
+			authenticatee=(SELECT uuid FROM users WHERE email=$2)
+		AND
+			$1=ANY(tokens);`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
 		WithArgs(token, email).

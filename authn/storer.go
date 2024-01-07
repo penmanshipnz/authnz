@@ -113,7 +113,7 @@ func (storer Storer) AddRememberToken(ctx context.Context, pid string, token str
 			ARRAY[$2])
 		ON CONFLICT (authenticatee)
 		DO
-			UPDATE SET tokens = array_append(remember_tokens.tokens, $2);`
+			UPDATE SET tokens=array_append(remember_tokens.tokens, $2);`
 
 	_, err := storer.db.ExecContext(ctx, query, pid, token)
 
@@ -132,7 +132,7 @@ func (storer Storer) DelRememberTokens(ctx context.Context, pid string) error {
 			ARRAY[])
 		ON CONFLICT (authenticatee)
 		DO
-			UPDATE SET tokens = NULL;`
+			UPDATE SET tokens=NULL;`
 
 	_, err := storer.db.ExecContext(ctx, query, pid)
 
@@ -149,9 +149,11 @@ func (storer Storer) UseRememberToken(ctx context.Context, pid string, token str
 	const query = `
 		UPDATE remember_tokens
 		SET
-			tokens = ARRAY_REMOVE(tokens, $1)
+			tokens=ARRAY_REMOVE(tokens, $1)
 		WHERE
-			authenticatee=(SELECT uuid FROM users WHERE email=$2);`
+			authenticatee=(SELECT uuid FROM users WHERE email=$2)
+		AND
+			$1=ANY(tokens);`
 
 	result, err := storer.db.ExecContext(ctx, query, token, pid)
 
