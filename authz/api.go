@@ -26,7 +26,7 @@ func Encryption(w http.ResponseWriter, r *http.Request) {
 
 		token, _ := CreateToken(User{
 			UUID:          authnUser.UUID,
-			EncryptionKey: authnUser.Password,
+			EncryptionKey: authnUser.UUID,
 		}, signingKey)
 
 		c := http.Cookie{
