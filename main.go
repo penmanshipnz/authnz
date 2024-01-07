@@ -144,12 +144,16 @@ func setupAuthBoss(db *sql.DB, r *chi.Mux) (*authboss.Authboss, error) {
 		FieldName:  "email",
 		Required:   true,
 		MatchError: "Must be a valid e-mail address",
-		MustMatch:  regexp.MustCompile(`.*@.*\.[a-z]+`),
+		MustMatch:  regexp.MustCompile(`/^([a-z0-9_\.-]+)@([\da-z\.-]+)\.([a-z\.]{2,6})$/g`),
 	}
 	passwordRule := defaults.Rules{
-		FieldName: "password",
-		Required:  true,
-		MinLength: 4,
+		FieldName:       "password",
+		Required:        true,
+		MinLength:       8,
+		MinLower:        1,
+		MinUpper:        1,
+		MinNumeric:      1,
+		AllowWhitespace: false,
 	}
 
 	ab.Config.Core.BodyReader = defaults.HTTPBodyReader{
