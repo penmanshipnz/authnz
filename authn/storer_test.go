@@ -41,7 +41,7 @@ func TestCreateUserSuccess(t *testing.T) {
 
 	const query = `INSERT INTO users(uuid, email, password)
 		VALUES($1, $2, $3)
-		RETURNING uuid, email, password`
+		RETURNING uuid, email, password;`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
 		WithArgs(user.UUID, user.Email, user.Password).
@@ -60,7 +60,7 @@ func TestCreateUserErr(t *testing.T) {
 
 	const query = `INSERT INTO users(uuid, email, password)
 		VALUES($1, $2, $3)
-		RETURNING uuid, email, password`
+		RETURNING uuid, email, password;`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
 		WithArgs(user.UUID, user.Email, user.Password).
@@ -77,7 +77,7 @@ func TestLoadUserSuccess(t *testing.T) {
 	storer := CreateStorer(db)
 	user := ToUser(storer.New(ctx))
 
-	const query = `SELECT uuid, email, password FROM users WHERE email=$1`
+	const query = `SELECT uuid, email, password FROM users WHERE email=$1;`
 
 	const loadedEmail = "test123@test.com"
 	const loadedPassword = "12345"
@@ -105,7 +105,7 @@ func TestLoadUserErr(t *testing.T) {
 	storer := CreateStorer(db)
 	user := ToUser(storer.New(ctx))
 
-	const query = `SELECT uuid, email, password FROM users WHERE email=$1`
+	const query = `SELECT uuid, email, password FROM users WHERE email=$1;`
 
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
 		WithArgs(user.Email).
@@ -126,7 +126,7 @@ func TestSaveUserSuccess(t *testing.T) {
 		SET
 			password=$1
 		WHERE uuid=$2
-		RETURNING uuid, email, password`
+		RETURNING uuid, email, password;`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
 		WithArgs(user.Password, user.UUID).
@@ -147,13 +147,183 @@ func TestSaveUserErr(t *testing.T) {
 		SET
 			password=$1
 		WHERE uuid=$2
-		RETURNING uuid, email, password`
+		RETURNING uuid, email, password;`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
 		WithArgs(user.Password, user.UUID).
 		WillReturnError(errors.New(""))
 
 	if err := storer.Save(ctx, user); err == nil {
+		t.FailNow()
+	}
+}
+
+func TestAddRememberTokenSuccess(t *testing.T) {
+	db, mock, _ := sqlmock.New()
+
+	storer := CreateStorer(db)
+
+	const token = "1234"
+	const email = "1234"
+
+	const query = `INSERT INTO remember_tokens(authenticatee, tokens)
+		VALUES(
+			(SELECT uuid FROM users WHERE email=$1),
+			ARRAY[$2])
+		ON CONFLICT (authenticatee)
+		DO
+			UPDATE SET tokens = array_append(remember_tokens.tokens, $2);`
+
+	mock.ExpectExec(regexp.QuoteMeta(query)).
+		WithArgs(token, email).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	if err := storer.AddRememberToken(ctx, email, token); err != nil {
+		t.FailNow()
+	}
+}
+
+func TestAddRememberTokenErr(t *testing.T) {
+	db, mock, _ := sqlmock.New()
+
+	storer := CreateStorer(db)
+
+	const token = "1234"
+	const email = "1234"
+
+	const query = `INSERT INTO remember_tokens(authenticatee, tokens)
+		VALUES(
+			(SELECT uuid FROM users WHERE email=$1),
+			ARRAY[$2])
+		ON CONFLICT (authenticatee)
+		DO
+			UPDATE SET tokens = array_append(remember_tokens.tokens, $2);`
+
+	mock.ExpectExec(regexp.QuoteMeta(query)).
+		WithArgs(token, email).
+		WillReturnError(errors.New(""))
+
+	if err := storer.AddRememberToken(ctx, email, token); err == nil {
+		t.FailNow()
+	}
+}
+
+func TestDelRememberTokensSuccess(t *testing.T) {
+	db, mock, _ := sqlmock.New()
+
+	storer := CreateStorer(db)
+
+	const email = "1234"
+
+	const query = `INSERT INTO remember_tokens(authenticatee, tokens)
+		VALUES(
+			(SELECT uuid FROM users WHERE email=$1),
+			ARRAY[])
+		ON CONFLICT (authenticatee)
+		DO
+			UPDATE SET tokens = NULL;`
+
+	mock.ExpectExec(regexp.QuoteMeta(query)).
+		WithArgs(email).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	if err := storer.DelRememberTokens(ctx, email); err != nil {
+		t.FailNow()
+	}
+}
+
+func TestDelRememberTokensErr(t *testing.T) {
+	db, mock, _ := sqlmock.New()
+
+	storer := CreateStorer(db)
+
+	const email = "1234"
+
+	const query = `INSERT INTO remember_tokens(authenticatee, tokens)
+		VALUES(
+			(SELECT uuid FROM users WHERE email=$1),
+			ARRAY[])
+		ON CONFLICT (authenticatee)
+		DO
+			UPDATE SET tokens = NULL;`
+
+	mock.ExpectExec(regexp.QuoteMeta(query)).
+		WithArgs(email).
+		WillReturnError(errors.New(""))
+
+	if err := storer.DelRememberTokens(ctx, email); err == nil {
+		t.FailNow()
+	}
+}
+
+func TestUseRememberTokenSuccess(t *testing.T) {
+	db, mock, _ := sqlmock.New()
+
+	storer := CreateStorer(db)
+
+	const token = "1234"
+	const email = "1234"
+
+	const query = `
+		UPDATE remember_tokens
+		SET
+			tokens = ARRAY_REMOVE(tokens, $1)
+		WHERE
+			authenticatee=(SELECT uuid FROM users WHERE email=$2);`
+
+	mock.ExpectExec(regexp.QuoteMeta(query)).
+		WithArgs(token, email).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	if err := storer.UseRememberToken(ctx, email, token); err != nil {
+		t.FailNow()
+	}
+}
+
+func TestUseRememberTokenErr(t *testing.T) {
+	db, mock, _ := sqlmock.New()
+
+	storer := CreateStorer(db)
+
+	const token = "1234"
+	const email = "1234"
+
+	const query = `
+		UPDATE remember_tokens
+		SET
+			tokens = ARRAY_REMOVE(tokens, $1)
+		WHERE
+			authenticatee=(SELECT uuid FROM users WHERE email=$2);`
+
+	mock.ExpectExec(regexp.QuoteMeta(query)).
+		WithArgs(token, email).
+		WillReturnError(errors.New(""))
+
+	if err := storer.UseRememberToken(ctx, email, token); err == nil {
+		t.FailNow()
+	}
+}
+
+func TestUseRememberErrTokenNotFound(t *testing.T) {
+	db, mock, _ := sqlmock.New()
+
+	storer := CreateStorer(db)
+
+	const token = "1234"
+	const email = "1234"
+
+	const query = `
+		UPDATE remember_tokens
+		SET
+			tokens = ARRAY_REMOVE(tokens, $1)
+		WHERE
+			authenticatee=(SELECT uuid FROM users WHERE email=$2);`
+
+	mock.ExpectExec(regexp.QuoteMeta(query)).
+		WithArgs(token, email).
+		WillReturnResult(sqlmock.NewResult(1, 0))
+
+	if err := storer.UseRememberToken(ctx, email, token); err != authboss.ErrTokenNotFound {
 		t.FailNow()
 	}
 }

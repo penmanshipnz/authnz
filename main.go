@@ -32,6 +32,7 @@ import (
 	"github.com/volatiletech/authboss/v3/defaults"
 	_ "github.com/volatiletech/authboss/v3/logout"
 	_ "github.com/volatiletech/authboss/v3/register"
+	"github.com/volatiletech/authboss/v3/remember"
 )
 
 func main() {
@@ -174,7 +175,9 @@ func setupAuthBoss(db *sql.DB, r *chi.Mux) (*authboss.Authboss, error) {
 			handler.ServeHTTP(w, r)
 		})
 	}
-	r.Use(ab.LoadClientStateMiddleware, currentUserMiddleware)
+	// NOTE: For remember middleware, the `rm` field has to be set on the login request
+	// See: https://github.com/volatiletech/authboss-renderer/blob/b32bb7a1387f2ba930e691b841e786cb0be3ae28/html-templates/login.tpl#L6
+	r.Use(ab.LoadClientStateMiddleware, remember.Middleware(ab), currentUserMiddleware)
 
 	r.Group(func(r chi.Router) {
 		r.Use(authboss.ModuleListMiddleware(ab))

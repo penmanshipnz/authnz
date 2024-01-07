@@ -43,7 +43,7 @@ func (storer Storer) Create(ctx context.Context, abu authboss.User) error {
 
 	const query = `INSERT INTO users(uuid, email, password)
 		VALUES($1, $2, $3)
-		RETURNING uuid, email, password`
+		RETURNING uuid, email, password;`
 	_, err := storer.db.ExecContext(ctx, query, user.UUID, user.Email, user.Password)
 
 	return err
@@ -63,7 +63,7 @@ if key is an OAuth2PID or not.
 func (storer Storer) Load(ctx context.Context, email string) (authboss.User, error) {
 	var user User
 
-	const query = `SELECT uuid, email, password FROM users WHERE email=$1`
+	const query = `SELECT uuid, email, password FROM users WHERE email=$1;`
 	row := storer.db.QueryRowContext(ctx, query, email)
 
 	if err := row.Scan(&user.UUID, &user.Email, &user.Password); err != nil {
@@ -91,7 +91,7 @@ func (storer Storer) Save(ctx context.Context, abu authboss.User) error {
 		SET
 			password=$1
 		WHERE uuid=$2
-		RETURNING uuid, email, password`
+		RETURNING uuid, email, password;`
 	_, err := storer.db.ExecContext(ctx, query, user.Password, user.UUID)
 
 	return err
@@ -99,4 +99,75 @@ func (storer Storer) Save(ctx context.Context, abu authboss.User) error {
 
 func ToUser(user authboss.User) *User {
 	return user.(*User)
+}
+
+/*
+RememberingServerStorer interface
+
+AddRememberToken to a user
+*/
+func (storer Storer) AddRememberToken(ctx context.Context, pid string, token string) error {
+	const query = `INSERT INTO remember_tokens(authenticatee, tokens)
+		VALUES(
+			(SELECT uuid FROM users WHERE email=$1),
+			ARRAY[$2])
+		ON CONFLICT (authenticatee)
+		DO
+			UPDATE SET tokens = array_append(remember_tokens.tokens, $2);`
+
+	_, err := storer.db.ExecContext(ctx, query, pid, token)
+
+	return err
+}
+
+/*
+RememberingServerStorer interface
+
+DelRememberTokens removes all tokens for the given pid
+*/
+func (storer Storer) DelRememberTokens(ctx context.Context, pid string) error {
+	const query = `INSERT INTO remember_tokens(authenticatee, tokens)
+		VALUES(
+			(SELECT uuid FROM users WHERE email=$1),
+			ARRAY[])
+		ON CONFLICT (authenticatee)
+		DO
+			UPDATE SET tokens = NULL;`
+
+	_, err := storer.db.ExecContext(ctx, query, pid)
+
+	return err
+}
+
+/*
+RememberingServerStorer interface
+
+UseRememberToken finds the pid-token pair and deletes it.
+If the token could not be found return ErrTokenNotFound
+*/
+func (storer Storer) UseRememberToken(ctx context.Context, pid string, token string) error {
+	const query = `
+		UPDATE remember_tokens
+		SET
+			tokens = ARRAY_REMOVE(tokens, $1)
+		WHERE
+			authenticatee=(SELECT uuid FROM users WHERE email=$2);`
+
+	result, err := storer.db.ExecContext(ctx, query, token, pid)
+
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return authboss.ErrTokenNotFound
+	}
+
+	return nil
 }
