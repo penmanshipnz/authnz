@@ -1,4 +1,4 @@
-package authboss
+package authn
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func TestNewUser(t *testing.T) {
 
 	storer := CreateStorer(db)
 
-	if user := toUser(storer.New(ctx)); user.UUID == "" {
+	if user := ToUser(storer.New(ctx)); user.UUID == "" {
 		t.FailNow()
 	}
 }
@@ -37,7 +37,7 @@ func TestCreateUserSuccess(t *testing.T) {
 	db, mock, _ := sqlmock.New()
 
 	storer := CreateStorer(db)
-	user := toUser(storer.New(ctx))
+	user := ToUser(storer.New(ctx))
 
 	const query = `INSERT INTO users(uuid, email, password)
 		VALUES($1, $2, $3)
@@ -56,7 +56,7 @@ func TestCreateUserErr(t *testing.T) {
 	db, mock, _ := sqlmock.New()
 
 	storer := CreateStorer(db)
-	user := toUser(storer.New(ctx))
+	user := ToUser(storer.New(ctx))
 
 	const query = `INSERT INTO users(uuid, email, password)
 		VALUES($1, $2, $3)
@@ -75,7 +75,7 @@ func TestLoadUserSuccess(t *testing.T) {
 	db, mock, _ := sqlmock.New()
 
 	storer := CreateStorer(db)
-	user := toUser(storer.New(ctx))
+	user := ToUser(storer.New(ctx))
 
 	const query = `SELECT uuid, email, password FROM users WHERE email=$1`
 
@@ -89,9 +89,9 @@ func TestLoadUserSuccess(t *testing.T) {
 				AddRow(user.UUID, loadedEmail, loadedPassword))
 
 	isUserLoaded := func(result authboss.User) bool {
-		return toUser(result).UUID == user.UUID &&
-			toUser(result).Email == loadedEmail &&
-			toUser(result).Password == loadedPassword
+		return ToUser(result).UUID == user.UUID &&
+			ToUser(result).Email == loadedEmail &&
+			ToUser(result).Password == loadedPassword
 	}
 
 	if result, err := storer.Load(ctx, user.GetPID()); !isUserLoaded(result) || err != nil {
@@ -103,7 +103,7 @@ func TestLoadUserErr(t *testing.T) {
 	db, mock, _ := sqlmock.New()
 
 	storer := CreateStorer(db)
-	user := toUser(storer.New(ctx))
+	user := ToUser(storer.New(ctx))
 
 	const query = `SELECT uuid, email, password FROM users WHERE email=$1`
 
@@ -120,7 +120,7 @@ func TestSaveUserSuccess(t *testing.T) {
 	db, mock, _ := sqlmock.New()
 
 	storer := CreateStorer(db)
-	user := toUser(storer.New(ctx))
+	user := ToUser(storer.New(ctx))
 
 	const query = `UPDATE users
 		SET
@@ -141,7 +141,7 @@ func TestSaveUserErr(t *testing.T) {
 	db, mock, _ := sqlmock.New()
 
 	storer := CreateStorer(db)
-	user := toUser(storer.New(ctx))
+	user := ToUser(storer.New(ctx))
 
 	const query = `UPDATE users
 		SET

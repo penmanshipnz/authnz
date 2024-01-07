@@ -11,37 +11,13 @@ type User struct {
 	EncryptionKey string
 }
 
-func CreateAccessToken(user User, signingKey string, noExpiry bool) (string, error) {
-	registeredClaims := claims{"",
-		jwt.RegisteredClaims{
-			IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
-			NotBefore: jwt.NewNumericDate(time.Now().UTC()),
-			Issuer:    issuer,
-			Subject:   user.UUID,
-			ID:        user.UUID,
-		},
-	}
-
-	if !noExpiry {
-		registeredClaims.ExpiresAt = jwt.NewNumericDate(oneHourFromNow())
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, registeredClaims)
-
-	return token.SignedString([]byte(signingKey))
-}
-
-func CreateRefreshToken(user User, signingKey string, noExpiry bool) (string, error) {
+func CreateToken(user User, signingKey string) (string, error) {
 	registeredClaims := jwt.RegisteredClaims{
 		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
 		NotBefore: jwt.NewNumericDate(time.Now().UTC()),
 		Issuer:    issuer,
 		Subject:   user.UUID,
 		ID:        user.UUID,
-	}
-
-	if !noExpiry {
-		registeredClaims.ExpiresAt = jwt.NewNumericDate(oneMonthFromNow())
 	}
 
 	claims := claims{
@@ -66,11 +42,3 @@ type claims struct {
 }
 
 const issuer = "penmanship"
-
-func oneHourFromNow() time.Time {
-	return time.Now().UTC().Add(2 * time.Hour).Truncate(time.Second)
-}
-
-func oneMonthFromNow() time.Time {
-	return time.Now().UTC().AddDate(0, 1, 0).Truncate(time.Second)
-}

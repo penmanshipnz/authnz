@@ -1,4 +1,4 @@
-package authboss
+package authn
 
 import (
 	"context"
@@ -39,7 +39,7 @@ Create the user in storage, it should not overwrite a user
 and should return ErrUserFound if it currently exists.
 */
 func (storer Storer) Create(ctx context.Context, abu authboss.User) error {
-	user := toUser(abu)
+	user := ToUser(abu)
 
 	const query = `INSERT INTO users(uuid, email, password)
 		VALUES($1, $2, $3)
@@ -85,7 +85,7 @@ create a user and instead return ErrUserNotFound if the user
 does not exist.
 */
 func (storer Storer) Save(ctx context.Context, abu authboss.User) error {
-	user := toUser(abu)
+	user := ToUser(abu)
 
 	const query = `UPDATE users
 		SET
@@ -97,6 +97,6 @@ func (storer Storer) Save(ctx context.Context, abu authboss.User) error {
 	return err
 }
 
-func toUser(user authboss.User) *User {
+func ToUser(user authboss.User) *User {
 	return user.(*User)
 }

@@ -1,4 +1,4 @@
-package authboss
+package authn
 
 type User struct {
 	UUID     string

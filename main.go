@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"errors"
@@ -8,8 +9,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
-	authnzab "penmanship/authnz/authboss"
+	"penmanship/authnz/authn"
+	"penmanship/authnz/authz"
+	"penmanship/authnz/utils"
 	"regexp"
 	"time"
 
@@ -22,29 +24,29 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/google/go-querystring/query"
 	"github.com/gorilla/csrf"
-	"github.com/gorilla/securecookie"
 	"github.com/gorilla/sessions"
 	_ "github.com/lib/pq"
 	abclientstate "github.com/volatiletech/authboss-clientstate"
 	"github.com/volatiletech/authboss/v3"
 	_ "github.com/volatiletech/authboss/v3/auth"
 	"github.com/volatiletech/authboss/v3/defaults"
+	_ "github.com/volatiletech/authboss/v3/logout"
 	_ "github.com/volatiletech/authboss/v3/register"
 )
 
 func main() {
-	env := getEnvOrDefault("GO_ENV", "development")
+	env := utils.GetEnvOrDefault("GO_ENV", utils.Development)
 
 	connectionString, err := buildPgConnectionString(PgConnectionOptions{
-		User:        getEnvOrDefault("POSTGRES_USER", ""),
-		Password:    getEnvOrDefault("POSTGRES_PASSWORD", ""),
-		Host:        getEnvOrDefault("POSTGRES_HOSTNAME", ""),
-		Port:        getEnvOrDefault("POSTGRES_PORT", ""),
-		SSLCert:     getEnvOrDefault("POSTGRES_SSLCERT", ""),
-		SSLKey:      getEnvOrDefault("POSTGRES_SSLKEY", ""),
-		SSLRootCert: getEnvOrDefault("POSTGRES_SSLROOTCERT", ""),
-		SSLMode:     getEnvOrDefault("POSTGRES_SSLMODE", ""),
-		Database:    getEnvOrDefault("POSTGRES_DB", "authnz"),
+		User:        utils.GetEnvOrDefault("POSTGRES_USER", ""),
+		Password:    utils.GetEnvOrDefault("POSTGRES_PASSWORD", ""),
+		Host:        utils.GetEnvOrDefault("POSTGRES_HOSTNAME", ""),
+		Port:        utils.GetEnvOrDefault("POSTGRES_PORT", ""),
+		SSLCert:     utils.GetEnvOrDefault("POSTGRES_SSLCERT", ""),
+		SSLKey:      utils.GetEnvOrDefault("POSTGRES_SSLKEY", ""),
+		SSLRootCert: utils.GetEnvOrDefault("POSTGRES_SSLROOTCERT", ""),
+		SSLMode:     utils.GetEnvOrDefault("POSTGRES_SSLMODE", ""),
+		Database:    utils.GetEnvOrDefault("POSTGRES_DB", "authnz"),
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -87,47 +89,48 @@ func main() {
 	// Authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(authboss.Middleware2(ab, authboss.RequireNone, authboss.RespondUnauthorized))
-		// TODO: Authz
+		r.Get("/encryption", authz.Encryption)
 	})
 
-	CSRF := csrf.Protect(securecookie.GenerateRandomKey(32),
+	// openssl rand -base64 32
+	CSRF := csrf.Protect([]byte(utils.GetEnvOrDefault("CSRF_KEY", utils.GenerateRandomKey())),
 		csrf.Secure(env == "production"), csrf.CookieName("_csrf"))
+
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
 
 	http.ListenAndServe(":1001", CSRF(r))
 }
 
 func setupAuthBoss(db *sql.DB, r *chi.Mux) (*authboss.Authboss, error) {
-	// TODO
-	// - If login or register fails, its a success response with details of an error
-	//   Would rather go with unauthorized response
-	// - With register, if database create fails then there is still a success response
-	//   but the error is logged
-	// - Need to load current user information for authz
-	// - Improve validation
-	generateRandomKey := func() string {
-		return base64.StdEncoding.EncodeToString(securecookie.GenerateRandomKey(64))
-	}
+	// TODO: Less than ideal but overriding default `Responder` and/or `ErrorHandler`
+	// seems to have no effect, so we're stuck with 200 responses even if auth fails
+	// Maybe another middleware can be attached after to override but don't think
+	// it's necessary for the moment
+	// See: https://github.com/volatiletech/authboss/issues/234
 
-	cookieStoreKey, _ := base64.StdEncoding.DecodeString(getEnvOrDefault("COOKIE_STORE_KEY", generateRandomKey()))
-	sessionStoreKey, _ := base64.StdEncoding.DecodeString(getEnvOrDefault("SESSION_STORE_KEY", generateRandomKey()))
+	cookieStoreKey, _ := base64.StdEncoding.DecodeString(utils.GetEnvOrDefault("COOKIE_STORE_KEY", utils.GenerateRandomKey()))
+	sessionStoreKey, _ := base64.StdEncoding.DecodeString(utils.GetEnvOrDefault("SESSION_STORE_KEY", utils.GenerateRandomKey()))
 
 	ab := authboss.New()
-	database := authnzab.CreateStorer(db)
+	database := authn.CreateStorer(db)
 
+	ab.Config.Modules.LogoutMethod = "DELETE"
 	ab.Config.Paths.Mount = "/"
-	ab.Config.Paths.AuthLoginOK = "/"                     // TODO: Redirect to authz
-	ab.Config.Paths.RegisterOK = "/"                      // TODO: Redirect to authz
-	ab.Config.Paths.RootURL = "http://localhost:52112/"   // TODO: Env specific
-	ab.Config.Core.ViewRenderer = defaults.JSONRenderer{} // TODO: Custom renderer
+	ab.Config.Paths.AuthLoginOK = "/"
+	ab.Config.Paths.RegisterOK = "/"
+	ab.Config.Paths.RootURL = utils.GetEnvOrDefault("AB_ROOTURL", "http://localhost:1001")
+	ab.Config.Core.ViewRenderer = defaults.JSONRenderer{}
 
 	cookieStore := abclientstate.NewCookieStorer(cookieStoreKey, nil)
 	cookieStore.HTTPOnly = true
-	cookieStore.Secure = getEnvOrDefault("GO_ENV", "development") == "development"
+	cookieStore.Secure = utils.GetEnvOrDefault("GO_ENV", utils.Development) == utils.Production
 
 	sessionStore := abclientstate.NewSessionStorer("penmanship", sessionStoreKey, nil)
 	cstore := sessionStore.Store.(*sessions.CookieStore)
 	cstore.Options.HttpOnly = true
-	cstore.Options.Secure = getEnvOrDefault("GO_ENV", "development") == "development"
+	cstore.Options.Secure = utils.GetEnvOrDefault("GO_ENV", utils.Development) == utils.Production
 	cstore.MaxAge(int((30 * 24 * time.Hour) / time.Second))
 
 	ab.Config.Storage.Server = database
@@ -156,11 +159,22 @@ func setupAuthBoss(db *sql.DB, r *chi.Mux) (*authboss.Authboss, error) {
 		},
 	}
 
-	// Initialize authboss (instantiate modules etc.)
+	// Initialize authboss
 	err := ab.Init()
 
 	// Setup AuthBoss routes
-	r.Use(ab.LoadClientStateMiddleware)
+	currentUserMiddleware := func(handler http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			currentUser, err := ab.LoadCurrentUser(&r)
+
+			if err == nil {
+				r = r.WithContext(context.WithValue(r.Context(), authboss.CTXKeyUser, currentUser))
+			}
+
+			handler.ServeHTTP(w, r)
+		})
+	}
+	r.Use(ab.LoadClientStateMiddleware, currentUserMiddleware)
 
 	r.Group(func(r chi.Router) {
 		r.Use(authboss.ModuleListMiddleware(ab))
@@ -288,7 +302,7 @@ func createDatabase(connectionString string) *sql.DB {
 
 func createDatabaseDriver(db *sql.DB) database.Driver {
 	driver, err := postgres.WithInstance(db, &postgres.Config{
-		MigrationsTable:       getEnvOrDefault("POSTGRES_MIGRATIONS_TABLE", "migrations"),
+		MigrationsTable:       utils.GetEnvOrDefault("POSTGRES_MIGRATIONS_TABLE", "migrations"),
 		MultiStatementEnabled: true,
 	})
 	if err != nil {
@@ -309,14 +323,4 @@ func createMigration(driver database.Driver) *migrate.Migrate {
 	}
 
 	return migration
-}
-
-func getEnvOrDefault(key, defaultValue string) string {
-	value, exists := os.LookupEnv(key)
-
-	if !exists {
-		value = defaultValue
-	}
-
-	return value
 }
