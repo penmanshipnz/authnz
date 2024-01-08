@@ -94,6 +94,7 @@ func main() {
 	// confirm requires `cnf` field in request
 	r.Group(func(r chi.Router) {
 		r.Use(authboss.Middleware2(ab, authboss.RequireNone, authboss.RespondUnauthorized), confirm.Middleware(ab))
+		r.Get("/authz", authz.Verify)
 		r.Get("/encryption", authz.Encryption)
 	})
 
