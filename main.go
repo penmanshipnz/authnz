@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/smtp"
 	"net/url"
 	"penmanship/authnz/authn"
 	"penmanship/authnz/authz"
@@ -27,8 +28,10 @@ import (
 	"github.com/gorilla/sessions"
 	_ "github.com/lib/pq"
 	abclientstate "github.com/volatiletech/authboss-clientstate"
+	abrenderer "github.com/volatiletech/authboss-renderer"
 	"github.com/volatiletech/authboss/v3"
 	_ "github.com/volatiletech/authboss/v3/auth"
+	"github.com/volatiletech/authboss/v3/confirm"
 	"github.com/volatiletech/authboss/v3/defaults"
 	_ "github.com/volatiletech/authboss/v3/logout"
 	_ "github.com/volatiletech/authboss/v3/register"
@@ -88,8 +91,9 @@ func main() {
 	}
 
 	// Authenticated routes
+	// confirm requires `cnf` field in request
 	r.Group(func(r chi.Router) {
-		r.Use(authboss.Middleware2(ab, authboss.RequireNone, authboss.RespondUnauthorized))
+		r.Use(authboss.Middleware2(ab, authboss.RequireNone, authboss.RespondUnauthorized), confirm.Middleware(ab))
 		r.Get("/encryption", authz.Encryption)
 	})
 
@@ -123,6 +127,21 @@ func setupAuthBoss(db *sql.DB, r *chi.Mux) (*authboss.Authboss, error) {
 	ab.Config.Paths.RegisterOK = "/"
 	ab.Config.Paths.RootURL = utils.GetEnvOrDefault("AB_ROOTURL", "http://localhost:1001")
 	ab.Config.Core.ViewRenderer = defaults.JSONRenderer{}
+	// TODO: Custom mail views
+	ab.Config.Core.MailRenderer = abrenderer.NewEmail("/", "ab_views")
+
+	if utils.GetEnvOrDefault("GO_ENV", utils.Development) == utils.Production {
+		mailHost := utils.GetEnvOrDefault("MAIL_HOST", "")
+		mailUsername := utils.GetEnvOrDefault("MAIL_USERNAME", "")
+		mailPassword := utils.GetEnvOrDefault("MAIL_PASSWORD", "")
+
+		if mailHost == "" || mailUsername == "" || mailPassword == "" {
+			log.Fatal("mail server env not configured")
+		}
+
+		ab.Config.Core.Mailer = defaults.NewSMTPMailer(mailHost,
+			smtp.PlainAuth("", mailUsername, mailPassword, mailHost))
+	}
 
 	cookieStore := abclientstate.NewCookieStorer(cookieStoreKey, nil)
 	cookieStore.HTTPOnly = true
@@ -144,7 +163,7 @@ func setupAuthBoss(db *sql.DB, r *chi.Mux) (*authboss.Authboss, error) {
 		FieldName:  "email",
 		Required:   true,
 		MatchError: "Must be a valid e-mail address",
-		MustMatch:  regexp.MustCompile(`/^([a-z0-9_\.-]+)@([\da-z\.-]+)\.([a-z\.]{2,6})$/g`),
+		MustMatch:  regexp.MustCompile(`^([a-z0-9_\.-]+)@([\da-z\.-]+)\.([a-z\.]{2,6})$`),
 	}
 	passwordRule := defaults.Rules{
 		FieldName:       "password",
@@ -161,6 +180,9 @@ func setupAuthBoss(db *sql.DB, r *chi.Mux) (*authboss.Authboss, error) {
 		Rulesets: map[string][]defaults.Rules{
 			"login":    {emailRule, passwordRule},
 			"register": {emailRule, passwordRule},
+		},
+		Confirms: map[string][]string{
+			"register": {"password", authboss.ConfirmPrefix + "password"},
 		},
 	}
 

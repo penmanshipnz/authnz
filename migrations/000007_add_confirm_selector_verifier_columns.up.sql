@@ -1,0 +1,3 @@
+ALTER TABLE users
+	ADD COLUMN IF NOT EXISTS confirmed BOOLEAN DEFAULT false,
+	ADD COLUMN IF NOT EXISTS confirm_verifier TEXT;

@@ -41,10 +41,11 @@ and should return ErrUserFound if it currently exists.
 func (storer Storer) Create(ctx context.Context, abu authboss.User) error {
 	user := ToUser(abu)
 
-	const query = `INSERT INTO users(uuid, email, password)
-		VALUES($1, $2, $3)
-		RETURNING uuid, email, password;`
-	_, err := storer.db.ExecContext(ctx, query, user.UUID, user.Email, user.Password)
+	const query = `INSERT INTO users(
+			uuid, email, password,
+			confirmed, confirm_selector, confirm_verifier)
+		VALUES($1, $2, $3, $4, $5, $6);`
+	_, err := storer.db.ExecContext(ctx, query, user.UUID, user.Email, user.Password, user.Confirmed, user.ConfirmSelector, user.ConfirmVerifier)
 
 	return err
 }
@@ -63,10 +64,14 @@ if key is an OAuth2PID or not.
 func (storer Storer) Load(ctx context.Context, email string) (authboss.User, error) {
 	var user User
 
-	const query = `SELECT uuid, email, password FROM users WHERE email=$1;`
+	const query = `SELECT
+			uuid, email, password,
+			confirmed, confirm_selector, confirm_verifier
+		FROM users
+		WHERE email=$1;`
 	row := storer.db.QueryRowContext(ctx, query, email)
 
-	if err := row.Scan(&user.UUID, &user.Email, &user.Password); err != nil {
+	if err := row.Scan(&user.UUID, &user.Email, &user.Password, &user.Confirmed, &user.ConfirmSelector, &user.ConfirmVerifier); err != nil {
 		if err == sql.ErrNoRows {
 			return &user, authboss.ErrUserNotFound
 		}
@@ -89,10 +94,13 @@ func (storer Storer) Save(ctx context.Context, abu authboss.User) error {
 
 	const query = `UPDATE users
 		SET
-			password=$1
-		WHERE uuid=$2
-		RETURNING uuid, email, password;`
-	_, err := storer.db.ExecContext(ctx, query, user.Password, user.UUID)
+			password=$1,
+			confirmed=$2,
+			confirm_selector=$3,
+			confirm_verifier=$4
+		WHERE uuid=$5;`
+	_, err := storer.db.ExecContext(ctx, query, user.Password, user.Confirmed,
+		user.ConfirmSelector, user.ConfirmVerifier, user.UUID)
 
 	return err
 }
@@ -146,10 +154,9 @@ UseRememberToken finds the pid-token pair and deletes it.
 If the token could not be found return ErrTokenNotFound
 */
 func (storer Storer) UseRememberToken(ctx context.Context, pid string, token string) error {
-	const query = `
-		UPDATE remember_tokens
+	const query = `UPDATE remember_tokens
 		SET
-			tokens=ARRAY_REMOVE(tokens, $1)
+			tokens=array_remove(tokens, $1)
 		WHERE
 			authenticatee=(SELECT uuid FROM users WHERE email=$2)
 		AND
@@ -172,4 +179,29 @@ func (storer Storer) UseRememberToken(ctx context.Context, pid string, token str
 	}
 
 	return nil
+}
+
+/*
+ConfirmingServerStorer interface
+
+LoadByConfirmSelector finds a user by his confirm selector field
+and should return ErrUserNotFound if that user cannot be found.
+*/
+func (storer Storer) LoadByConfirmSelector(ctx context.Context, selector string) (authboss.ConfirmableUser, error) {
+	var user User
+
+	const query = `SELECT uuid, email, password, confirmed, confirm_selector, confirm_verifier
+		FROM users
+		WHERE confirm_selector=$1;`
+	row := storer.db.QueryRowContext(ctx, query, selector)
+
+	if err := row.Scan(&user.UUID, &user.Email, &user.Password, &user.Confirmed, &user.ConfirmSelector, &user.ConfirmVerifier); err != nil {
+		if err == sql.ErrNoRows {
+			return &user, authboss.ErrUserNotFound
+		}
+
+		return &user, err
+	}
+
+	return &user, nil
 }

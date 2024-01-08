@@ -39,12 +39,13 @@ func TestCreateUserSuccess(t *testing.T) {
 	storer := CreateStorer(db)
 	user := ToUser(storer.New(ctx))
 
-	const query = `INSERT INTO users(uuid, email, password)
-		VALUES($1, $2, $3)
-		RETURNING uuid, email, password;`
+	const query = `INSERT INTO users(
+		uuid, email, password,
+		confirmed, confirm_selector, confirm_verifier)
+	VALUES($1, $2, $3, $4, $5, $6);`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
-		WithArgs(user.UUID, user.Email, user.Password).
+		WithArgs(user.UUID, user.Email, user.Password, user.Confirmed, user.ConfirmSelector, user.ConfirmVerifier).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	if err := storer.Create(ctx, user); err != nil {
@@ -58,9 +59,10 @@ func TestCreateUserErr(t *testing.T) {
 	storer := CreateStorer(db)
 	user := ToUser(storer.New(ctx))
 
-	const query = `INSERT INTO users(uuid, email, password)
-		VALUES($1, $2, $3)
-		RETURNING uuid, email, password;`
+	const query = `INSERT INTO users(
+		uuid, email, password,
+		confirmed, confirm_selector, confirm_verifier)
+	VALUES($1, $2, $3, $4, $5, $6);`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
 		WithArgs(user.UUID, user.Email, user.Password).
@@ -77,7 +79,11 @@ func TestLoadUserSuccess(t *testing.T) {
 	storer := CreateStorer(db)
 	user := ToUser(storer.New(ctx))
 
-	const query = `SELECT uuid, email, password FROM users WHERE email=$1;`
+	const query = `SELECT
+			uuid, email, password,
+			confirmed, confirm_selector, confirm_verifier
+		FROM users
+		WHERE email=$1;`
 
 	const loadedEmail = "test123@test.com"
 	const loadedPassword = "12345"
@@ -85,8 +91,10 @@ func TestLoadUserSuccess(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
 		WithArgs(user.Email).
 		WillReturnRows(
-			sqlmock.NewRows([]string{"uuid", "email", "password"}).
-				AddRow(user.UUID, loadedEmail, loadedPassword))
+			sqlmock.NewRows([]string{"uuid", "email", "password",
+				"confirmed", "confirm_selector", "confirm_verifier"}).
+				AddRow(user.UUID, loadedEmail, loadedPassword,
+					user.Confirmed, user.ConfirmSelector, user.ConfirmVerifier))
 
 	isUserLoaded := func(result authboss.User) bool {
 		return ToUser(result).UUID == user.UUID &&
@@ -105,7 +113,11 @@ func TestLoadUserErr(t *testing.T) {
 	storer := CreateStorer(db)
 	user := ToUser(storer.New(ctx))
 
-	const query = `SELECT uuid, email, password FROM users WHERE email=$1;`
+	const query = `SELECT
+			uuid, email, password,
+			confirmed, confirm_selector, confirm_verifier
+		FROM users
+		WHERE email=$1;`
 
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
 		WithArgs(user.Email).
@@ -124,12 +136,14 @@ func TestSaveUserSuccess(t *testing.T) {
 
 	const query = `UPDATE users
 		SET
-			password=$1
-		WHERE uuid=$2
-		RETURNING uuid, email, password;`
+			password=$1,
+			confirmed=$2,
+			confirm_selector=$3,
+			confirm_verifier=$4
+		WHERE uuid=$5;`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
-		WithArgs(user.Password, user.UUID).
+		WithArgs(user.Password, user.Confirmed, user.ConfirmSelector, user.ConfirmVerifier, user.UUID).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
 	if err := storer.Save(ctx, user); err != nil {
@@ -145,12 +159,14 @@ func TestSaveUserErr(t *testing.T) {
 
 	const query = `UPDATE users
 		SET
-			password=$1
-		WHERE uuid=$2
-		RETURNING uuid, email, password;`
+			password=$1,
+			confirmed=$2,
+			confirm_selector=$3,
+			confirm_verifier=$4
+		WHERE uuid=$5;`
 
 	mock.ExpectExec(regexp.QuoteMeta(query)).
-		WithArgs(user.Password, user.UUID).
+		WithArgs(user.Password, user.Confirmed, user.ConfirmSelector, user.ConfirmVerifier, user.UUID).
 		WillReturnError(errors.New(""))
 
 	if err := storer.Save(ctx, user); err == nil {
@@ -264,10 +280,9 @@ func TestUseRememberTokenSuccess(t *testing.T) {
 	const token = "1234"
 	const email = "1234"
 
-	const query = `
-		UPDATE remember_tokens
+	const query = `UPDATE remember_tokens
 		SET
-			tokens=ARRAY_REMOVE(tokens, $1)
+			tokens=array_remove(tokens, $1)
 		WHERE
 			authenticatee=(SELECT uuid FROM users WHERE email=$2)
 		AND
@@ -290,10 +305,9 @@ func TestUseRememberTokenErr(t *testing.T) {
 	const token = "1234"
 	const email = "1234"
 
-	const query = `
-		UPDATE remember_tokens
+	const query = `UPDATE remember_tokens
 		SET
-			tokens=ARRAY_REMOVE(tokens, $1)
+			tokens=array_remove(tokens, $1)
 		WHERE
 			authenticatee=(SELECT uuid FROM users WHERE email=$2)
 		AND
@@ -316,10 +330,9 @@ func TestUseRememberErrTokenNotFound(t *testing.T) {
 	const token = "1234"
 	const email = "1234"
 
-	const query = `
-		UPDATE remember_tokens
+	const query = `UPDATE remember_tokens
 		SET
-			tokens=ARRAY_REMOVE(tokens, $1)
+			tokens=array_remove(tokens, $1)
 		WHERE
 			authenticatee=(SELECT uuid FROM users WHERE email=$2)
 		AND
@@ -330,6 +343,68 @@ func TestUseRememberErrTokenNotFound(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 0))
 
 	if err := storer.UseRememberToken(ctx, email, token); err != authboss.ErrTokenNotFound {
+		t.FailNow()
+	}
+}
+
+func TestLoadByConfirmSelectorSuccess(t *testing.T) {
+	db, mock, _ := sqlmock.New()
+
+	storer := CreateStorer(db)
+	user := ToUser(storer.New(ctx))
+
+	const query = `SELECT uuid, email, password, confirmed, confirm_selector, confirm_verifier
+	FROM users
+	WHERE confirm_selector=$1`
+
+	mock.ExpectQuery(regexp.QuoteMeta(query)).
+		WithArgs(user.ConfirmSelector).
+		WillReturnRows(
+			sqlmock.NewRows([]string{
+				"uuid", "email", "password",
+				"confirmed", "confirm_selector", "confirm_verifier"}).
+				AddRow(user.UUID, user.Email, user.Password,
+					user.Confirmed, user.ConfirmSelector, user.ConfirmVerifier))
+
+	if cu, err := storer.LoadByConfirmSelector(ctx, user.ConfirmSelector); err != nil || ToUser(cu).UUID != user.UUID {
+		t.FailNow()
+	}
+}
+
+func TestLoadByConfirmSelectorErr(t *testing.T) {
+	db, mock, _ := sqlmock.New()
+
+	storer := CreateStorer(db)
+	user := ToUser(storer.New(ctx))
+
+	const query = `SELECT uuid, email, password, confirmed, confirm_selector, confirm_verifier
+	FROM users
+	WHERE confirm_selector=$1`
+
+	mock.ExpectQuery(regexp.QuoteMeta(query)).
+		WithArgs(user.ConfirmSelector).
+		WillReturnError(errors.New(""))
+
+	if _, err := storer.LoadByConfirmSelector(ctx, user.ConfirmSelector); err == nil {
+		t.FailNow()
+	}
+}
+
+func TestLoadByConfirmSelectorErrUserNotFound(t *testing.T) {
+	db, mock, _ := sqlmock.New()
+
+	storer := CreateStorer(db)
+	user := ToUser(storer.New(ctx))
+
+	const query = `SELECT uuid, email, password, confirmed, confirm_selector, confirm_verifier
+	FROM users
+	WHERE confirm_selector=$1`
+
+	mock.ExpectQuery(regexp.QuoteMeta(query)).
+		WithArgs(user.ConfirmSelector).
+		WillReturnError(sql.ErrNoRows)
+
+	if _, err := storer.LoadByConfirmSelector(ctx, user.ConfirmSelector); err == nil || err != authboss.ErrUserNotFound {
 		t.FailNow()
 	}
 }
