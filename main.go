@@ -70,7 +70,7 @@ func main() {
 	r.Use(middleware.Compress(5))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"https://*", "http://*"},
-		AllowedMethods:   []string{"GET", "POST"},
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-CSRF-Token"},
 		AllowCredentials: false,
 	}))

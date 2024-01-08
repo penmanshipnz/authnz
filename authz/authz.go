@@ -37,7 +37,7 @@ func ParseToken(token string, signingKey string) (*jwt.Token, error) {
 }
 
 type claims struct {
-	EncryptionKey string `json:"encryptionKey"`
+	EncryptionKey string
 	jwt.RegisteredClaims
 }
 

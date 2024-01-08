@@ -2,6 +2,7 @@ package authz
 
 import (
 	"net/http"
+	"time"
 
 	"penmanship/authnz/authn"
 	"penmanship/authnz/utils"
@@ -13,7 +14,7 @@ func Encryption(w http.ResponseWriter, r *http.Request) {
 	const CookieName = "penmanship_data"
 
 	cookie, err := r.Cookie(CookieName)
-	signingKey := utils.GetEnvOrDefault("ENCRYPTION_KEY", "")
+	signingKey := utils.GetEnvOrDefault("ENCRYPTION_SIGNING_KEY", "")
 
 	if err != nil {
 		u := r.Context().Value(authboss.CTXKeyUser)
@@ -30,8 +31,11 @@ func Encryption(w http.ResponseWriter, r *http.Request) {
 		}, signingKey)
 
 		c := http.Cookie{
-			Name:  CookieName,
-			Value: token,
+			Name:     CookieName,
+			Value:    token,
+			HttpOnly: true,
+			Secure:   utils.GetEnvOrDefault("GO_ENV", utils.Development) == utils.Production,
+			Expires:  time.Now().UTC().AddDate(0, 1, 0),
 		}
 
 		http.SetCookie(w, &c)
